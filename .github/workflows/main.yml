@@ -1,0 +1,35 @@
+name: Run PHP Script with Inputs
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: "Enter the phone number"
+        required: true
+        default: "0974875609"
+      environment:
+        description: "Choose environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+jobs:
+  run-php:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+
+      - name: Run PHP script
+        run: |
+          echo "Running PHP script with phone: ${{ github.event.inputs.phone }}"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          php yourscript.php "${{ github.event.inputs.phone }}"

@@ -1,6 +1,6 @@
 <?php
 header('content-type: application/json');
-$sdt = $_GET["phone"] ?? ($argv[1] ?? null);
+$sdt = $_GET["phone"];
 if(strlen($sdt) < 10){
 	echo ECHOJSON(array("status" => "error","msg" => "Vui Lòng Nhập Đúng Số Phone")); exit;
 } else if(!$sdt){

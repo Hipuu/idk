@@ -52,10 +52,12 @@ mkdir -p "$ZIP_DIR/META-INF/com/google/android"
 
 # Copy partition images
 echo "Copying partition images..."
-for partition in boot system vendor product system_ext odm dtbo vbmeta vendor_boot recovery; do
-    if [ -f "$EXTRACT_DIR/${partition}.img" ]; then
-        echo "  Found ${partition}.img"
-        cp "$EXTRACT_DIR/${partition}.img" "$ZIP_DIR/"
+# Copy ALL extracted partition images (not just specific ones)
+for img_file in "$EXTRACT_DIR"/*.img; do
+    if [ -f "$img_file" ]; then
+        PARTITION_NAME=$(basename "$img_file")
+        echo "  Found $PARTITION_NAME"
+        cp "$img_file" "$ZIP_DIR/"
     fi
 done
 
@@ -118,7 +120,7 @@ cd $TMPDIR
 ui_print "Extracting ROM files...";
 unzip -o "$ZIPFILE" "*.img" -d $TMPDIR 2>/dev/null
 
-set_progress 0.2
+set_progress 0.1
 
 # Detect current slot
 CURRENT_SLOT=$(getprop ro.boot.slot_suffix)
@@ -131,81 +133,34 @@ else
     SLOT_SUFFIX=$CURRENT_SLOT
 fi
 
-# Flash boot
-if [ -f boot.img ]; then
-    ui_print "Flashing boot partition..."
-    dd if=boot.img of=/dev/block/bootdevice/by-name/boot${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ boot flashed"
-fi
+# Count total images for progress calculation
+TOTAL_IMAGES=$(ls -1 *.img 2>/dev/null | wc -l)
+CURRENT=0
 
-set_progress 0.3
-
-# Flash dtbo
-if [ -f dtbo.img ]; then
-    ui_print "Flashing dtbo partition..."
-    dd if=dtbo.img of=/dev/block/bootdevice/by-name/dtbo${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ dtbo flashed"
-fi
-
-set_progress 0.4
-
-# Flash vbmeta (disable verification)
-if [ -f vbmeta.img ]; then
-    ui_print "Flashing vbmeta partition..."
-    dd if=vbmeta.img of=/dev/block/bootdevice/by-name/vbmeta${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ vbmeta flashed"
-fi
-
-set_progress 0.5
-
-# Flash vendor_boot
-if [ -f vendor_boot.img ]; then
-    ui_print "Flashing vendor_boot partition..."
-    dd if=vendor_boot.img of=/dev/block/bootdevice/by-name/vendor_boot${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ vendor_boot flashed"
-fi
-
-set_progress 0.6
-
-# Flash system
-if [ -f system.img ]; then
-    ui_print "Flashing system partition..."
-    ui_print "  This may take a while..."
-    dd if=system.img of=/dev/block/bootdevice/by-name/system${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ system flashed"
-fi
-
-set_progress 0.75
-
-# Flash vendor
-if [ -f vendor.img ]; then
-    ui_print "Flashing vendor partition..."
-    dd if=vendor.img of=/dev/block/bootdevice/by-name/vendor${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ vendor flashed"
-fi
-
-set_progress 0.85
-
-# Flash product
-if [ -f product.img ]; then
-    ui_print "Flashing product partition..."
-    dd if=product.img of=/dev/block/bootdevice/by-name/product${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ product flashed"
-fi
-
-# Flash system_ext
-if [ -f system_ext.img ]; then
-    ui_print "Flashing system_ext partition..."
-    dd if=system_ext.img of=/dev/block/bootdevice/by-name/system_ext${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ system_ext flashed"
-fi
-
-# Flash odm
-if [ -f odm.img ]; then
-    ui_print "Flashing odm partition..."
-    dd if=odm.img of=/dev/block/bootdevice/by-name/odm${SLOT_SUFFIX} bs=1M
-    ui_print "  ✓ odm flashed"
-fi
+# Flash all partition images dynamically
+for img_file in *.img; do
+    if [ -f "$img_file" ]; then
+        PARTITION=$(basename "$img_file" .img)
+        
+        # Calculate progress
+        CURRENT=$((CURRENT + 1))
+        PROGRESS=$(awk "BEGIN {printf \"%.2f\", 0.1 + (0.85 * $CURRENT / $TOTAL_IMAGES)}")
+        set_progress $PROGRESS
+        
+        # Determine block device path
+        BLOCK_DEVICE="/dev/block/bootdevice/by-name/${PARTITION}${SLOT_SUFFIX}"
+        
+        # Check if partition exists
+        if [ -e "$BLOCK_DEVICE" ] || [ -e "/dev/block/bootdevice/by-name/${PARTITION}" ]; then
+            ui_print "Flashing $PARTITION..."
+            dd if="$img_file" of="$BLOCK_DEVICE" bs=1M 2>/dev/null || \
+            dd if="$img_file" of="/dev/block/bootdevice/by-name/${PARTITION}" bs=1M 2>/dev/null
+            ui_print "  ✓ $PARTITION flashed"
+        else
+            ui_print "  ⊘ Skipping $PARTITION (partition not found)"
+        fi
+    fi
+done
 
 set_progress 0.95
 
@@ -259,9 +214,10 @@ EOF
 
 # Package into flashable ZIP
 echo "Creating flashable ZIP..."
+mkdir -p "$OUTPUT_DIR"  # Ensure output directory exists
 FINAL_ZIP="$OUTPUT_DIR/recovery_rom.zip"
 cd "$ZIP_DIR"
-zip -r "$FINAL_ZIP" . -q
+zip -0 -r "$FINAL_ZIP" . -q  # -0 = store mode (no compression)
 
 echo "=== Conversion Complete ==="
 echo "Output file: $FINAL_ZIP"

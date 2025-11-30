@@ -125,17 +125,23 @@ lpmake \
     }
 
 # Copy other critical partitions
-echo "Copying other partitions..."
-for partition in boot dtbo vbmeta vendor_boot recovery; do
-    if [ -f "$EXTRACT_DIR/${partition}.img" ]; then
-        echo "  Copying ${partition}.img"
-        cp "$EXTRACT_DIR/${partition}.img" "$OUTPUT_DIR/"
+echo "Copying partition images..."
+# Copy ALL extracted partition images
+for img_file in "$EXTRACT_DIR"/*.img; do
+    if [ -f "$img_file" ]; then
+        PARTITION_NAME=$(basename "$img_file")
+        # Skip super.img as we process it separately
+        if [ "$PARTITION_NAME" != "super.img" ]; then
+            echo "  Copying $PARTITION_NAME"
+            cp "$img_file" "$OUTPUT_DIR/"
+        fi
     fi
 done
 
 # Create flash script
 # Download latest Android Platform Tools
 echo "Downloading Android Platform Tools..."
+mkdir -p "$OUTPUT_DIR"  # Ensure output directory exists
 PLATFORM_TOOLS_URL="https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 wget -q "$PLATFORM_TOOLS_URL" -O "$WORK_DIR/platform-tools.zip"
 
@@ -197,67 +203,70 @@ echo.
 echo [*] Setting active slot to A...
 %fastboot% --set-active=a
 
-:: Flash physical partitions first
-if exist boot.img (
-    echo [1/6] Flashing boot...
-    %fastboot% flash boot boot.img
-)
+:: Flash physical partitions (bootloader mode)
+echo.
+echo ========== Flashing Physical Partitions ==========
+echo.
 
-if exist dtbo.img (
-    echo [2/6] Flashing dtbo...
-    %fastboot% flash dtbo dtbo.img
-)
+:: Physical partitions that can be flashed in bootloader mode
+set PHYSICAL_PARTITIONS=boot dtbo vbmeta vendor_boot init_boot recovery abl aop aop_config bluetooth cpucp devcfg dsp engineering_cdt featenabler hyp imagefv keymaster modem oplus_sec oplusstanvbk qupfw shrm splash tz uefi uefisecapp cpucp_dtb vbmeta_vendor xbl xbl_config xbl_ramdump
 
-if exist vbmeta.img (
-    echo [3/6] Flashing vbmeta...
-    %fastboot% --disable-verity --disable-verification flash vbmeta vbmeta.img
-)
-
-if exist vendor_boot.img (
-    echo [4/6] Flashing vendor_boot...
-    %fastboot% flash vendor_boot vendor_boot.img
-)
-
-if exist init_boot.img (
-    echo [5/6] Flashing init_boot...
-    %fastboot% flash init_boot init_boot.img
-)
-
-:: Flash super.img
-if exist super.img (
-    echo [6/6] Flashing super...
-    %fastboot% flash super super.img
-    echo.
-    echo Super image flashed successfully!
-) else (
-    echo [WARNING] super.img not found!
-    echo This package may only contain logical partition images.
-    
-    :: Reboot to fastbootd for logical partition flashing
-    echo.
-    echo Rebooting to fastbootd mode...
-    %fastboot% reboot fastboot
-    echo.
-    echo  #################################################
-    echo  # IMPORTANT: Select English on phone screen    #
-    echo  # Wait for fastbootd mode to load             #
-    echo  # Then press any key to continue...           #
-    echo  #################################################
-    pause
-    
-    :: Flash logical partitions if they exist
-    for %%P in (system system_ext product vendor odm) do (
-        if exist %%P.img (
-            echo Flashing %%P to both slots...
-            %fastboot% delete-logical-partition %%P_a
-            %fastboot% delete-logical-partition %%P_b
-            %fastboot% create-logical-partition %%P_a 1
-            %fastboot% create-logical-partition %%P_b 1
+set PARTITION_COUNT=0
+for %%P in (%PHYSICAL_PARTITIONS%) do (
+    if exist %%P.img (
+        set /a PARTITION_COUNT+=1
+        echo [!PARTITION_COUNT!] Flashing %%P...
+        if "%%P"=="vbmeta" (
+            %fastboot% --disable-verity --disable-verification flash %%P %%P.img
+        ) else if "%%P"=="vbmeta_vendor" (
+            %fastboot% --disable-verity --disable-verification flash %%P %%P.img
+        ) else (
             %fastboot% flash %%P %%P.img
         )
     )
 )
 
+:: Flash super.img if it exists
+if exist super.img (
+    echo.
+    echo [SUPER] Flashing super.img...
+    %fastboot% flash super super.img
+    echo Super image flashed successfully!
+    goto :wipe_prompt
+)
+
+:: If no super.img, flash logical partitions in fastbootd
+echo.
+echo ========== Rebooting to Fastbootd ==========
+echo.
+echo [*] Rebooting to fastbootd mode...
+%fastboot% reboot fastboot
+
+echo.
+echo  #################################################
+echo  # IMPORTANT: Wait for fastbootd mode           #
+echo  # The phone screen will show "Fastbootd"       #
+echo  # Then press any key to continue...            #
+echo  #################################################
+echo.
+pause
+
+:: Flash logical partitions (fastbootd mode)
+echo.
+echo ========== Flashing Logical Partitions ==========
+echo.
+
+:: Logical partitions that go in super
+set LOGICAL_PARTITIONS=system system_ext product vendor odm system_dlkm vendor_dlkm my_product my_engineering my_stock my_carrier my_region my_bigball my_heytap my_manifest
+
+for %%P in (%LOGICAL_PARTITIONS%) do (
+    if exist %%P.img (
+        echo [LOGICAL] Flashing %%P...
+        %fastboot% flash %%P %%P.img
+    )
+)
+
+:wipe_prompt
 echo.
 echo.********************** CHECK ABOVE FOR ERRORS **************************
 echo.************** IF ERRORS, DO NOT BOOT INTO SYSTEM **********************

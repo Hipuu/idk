@@ -15,6 +15,11 @@ echo "=== Converting to Recovery ROM ==="
 echo "Input ROM: $ROM_PATH"
 echo "Output directory: $OUTPUT_DIR"
 
+# Convert output directory to absolute path
+OUTPUT_DIR=$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")
+mkdir -p "$OUTPUT_DIR"
+echo "Absolute output path: $OUTPUT_DIR"
+
 # Create working directories
 WORK_DIR="$(mktemp -d)"
 EXTRACT_DIR="$WORK_DIR/extracted"
@@ -214,7 +219,6 @@ EOF
 
 # Package into flashable ZIP
 echo "Creating flashable ZIP..."
-mkdir -p "$OUTPUT_DIR"  # Ensure output directory exists
 FINAL_ZIP="$OUTPUT_DIR/recovery_rom.zip"
 cd "$ZIP_DIR"
 zip -0 -r "$FINAL_ZIP" . -q  # -0 = store mode (no compression)

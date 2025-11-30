@@ -243,21 +243,12 @@ jobs:
             "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
           rclone copy final/${{ steps.metadata.outputs.output_filename }}.sha256 \
             "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
-      
-      - name: Save output link
-        run: |
-          mkdir -p artifacts
-          echo "${{ steps.upload.outputs.drive_link }}" > artifacts/download_link.txt
-          echo "ROM: ${{ steps.metadata.outputs.output_filename }}" >> artifacts/download_link.txt
-          echo "Type: ${{ github.event.inputs.rom_type }}" >> artifacts/download_link.txt
-          echo "User ID: ${{ github.event.inputs.user_id }}" >> artifacts/download_link.txt
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rom-download-link
-          path: artifacts/download_link.txt
-          retention-days: 7
+          
+          echo ""
+          echo "=== Conversion Complete ==="
+          echo "ROM: ${{ steps.metadata.outputs.output_filename }}"
+          echo "Type: ${{ github.event.inputs.rom_type }}"
+          echo "Download: $DRIVE_LINK"
       
       - name: Cleanup
         if: always()

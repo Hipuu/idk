@@ -15,6 +15,11 @@ echo "=== Converting to Super ROM ==="
 echo "Input ROM: $ROM_PATH"
 echo "Output directory: $OUTPUT_DIR"
 
+# Convert output directory to absolute path
+OUTPUT_DIR=$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")
+mkdir -p "$OUTPUT_DIR"
+echo "Absolute output path: $OUTPUT_DIR"
+
 # Create working directories
 WORK_DIR="$(mktemp -d)"
 EXTRACT_DIR="$WORK_DIR/rom_extracted" # Changed from 'extracted' to 'rom_extracted'
@@ -141,7 +146,6 @@ done
 # Create flash script
 # Download latest Android Platform Tools
 echo "Downloading Android Platform Tools..."
-mkdir -p "$OUTPUT_DIR"  # Ensure output directory exists
 PLATFORM_TOOLS_URL="https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
 wget -q "$PLATFORM_TOOLS_URL" -O "$WORK_DIR/platform-tools.zip"
 

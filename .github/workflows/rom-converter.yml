@@ -61,7 +61,7 @@ jobs:
           git clone https://github.com/unix3dgforce/lpunpack_and_lpmake.git
           cd lpunpack_and_lpmake
           
-# Build lpunpack
+          # Build lpunpack
           echo "Building lpunpack..."
           gcc lpunpack.c -o lpunpack -lz
           

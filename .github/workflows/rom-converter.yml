@@ -42,27 +42,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             android-sdk-libsparse-utils \
-            android-sdk-ext4-utils \
             brotli \
             unzip \
             zip \
             python3-pip \
             aria2 \
             wget \
-            curl
+            curl \
+            e2fsprogs
       
-      - name: Install Android tools
+      - name: Install lpunpack and lpmake
         run: |
-          # Install lpunpack/lpmake tools
-          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpunpack -O /usr/local/bin/lpunpack
-          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpmake -O /usr/local/bin/lpmake
-          chmod +x /usr/local/bin/lpunpack
-          chmod +x /usr/local/bin/lpmake
+          # Download precompiled lpunpack and lpmake binaries
+          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpunpack -O /tmp/lpunpack
+          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpmake -O /tmp/lpmake
           
-          # Install simg2img/img2simg
-          wget https://github.com/anestisb/android-simg2img/releases/download/1.1.4/simg2img_1.1.4-1_amd64.deb
-          sudo dpkg -i simg2img_1.1.4-1_amd64.deb || true
-          sudo apt-get install -f -y
+          # Install to /usr/local/bin
+          sudo install -m 755 /tmp/lpunpack /usr/local/bin/lpunpack
+          sudo install -m 755 /tmp/lpmake /usr/local/bin/lpmake
+          
+          # Verify installation
+          lpunpack --help || echo "lpunpack installed"
+          lpmake --help || echo "lpmake installed"
       
       - name: Install rclone
         run: |

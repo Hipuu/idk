@@ -233,16 +233,16 @@ jobs:
           # Upload and get shareable link
           DRIVE_LINK=$(bash scripts/upload_to_drive.sh \
             final/${{ steps.metadata.outputs.output_filename }} \
-            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}")
+            "${RCLONE_REMOTE:-bot}:${DRIVE_FOLDER:-ROM_Builds}")
           
           echo "drive_link=$DRIVE_LINK" >> $GITHUB_OUTPUT
           echo "Download link: $DRIVE_LINK"
           
           # Also upload checksums
           rclone copy final/${{ steps.metadata.outputs.output_filename }}.md5 \
-            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
+            "${RCLONE_REMOTE:-bot}:${DRIVE_FOLDER:-ROM_Builds}/"
           rclone copy final/${{ steps.metadata.outputs.output_filename }}.sha256 \
-            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
+            "${RCLONE_REMOTE:-bot}:${DRIVE_FOLDER:-ROM_Builds}/"
           
           echo ""
           echo "=== Conversion Complete ==="

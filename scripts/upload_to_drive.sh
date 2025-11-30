@@ -20,14 +20,48 @@ echo "=== Uploading to Google Drive ==="
 echo "File: $ROM_FILE"
 echo "Destination: $DRIVE_PATH"
 
-# Upload file
-rclone copy "$ROM_FILE" "$DRIVE_PATH" \
-    --progress \
-    --stats 10s \
-    --transfers 4 \
-    --checkers 8 \
-    --buffer-size 16M \
-    --drive-chunk-size 64M
+# Upload file with retry logic for rate limits
+echo "Starting upload (this may take a while for large files)..."
+
+MAX_RETRIES=5
+RETRY_COUNT=0
+UPLOAD_SUCCESS=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    echo "Upload attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+    
+    if rclone copy "$ROM_FILE" "$DRIVE_PATH" \
+        --progress \
+        --stats 30s \
+        --transfers 1 \
+        --checkers 1 \
+        --buffer-size 32M \
+        --drive-chunk-size 128M \
+        --tpslimit 2 \
+        --tpslimit-burst 10 \
+        --retries 10 \
+        --low-level-retries 20 \
+        --timeout 1h \
+        --contimeout 1h \
+        --drive-acknowledge-abuse \
+        --drive-stop-on-upload-limit; then
+        UPLOAD_SUCCESS=true
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            WAIT_TIME=$((30 * RETRY_COUNT))
+            echo "Upload failed. Waiting ${WAIT_TIME}s before retry..."
+            sleep $WAIT_TIME
+        fi
+    fi
+done
+
+if [ "$UPLOAD_SUCCESS" = false ]; then
+    echo "Error: Upload failed after $MAX_RETRIES attempts"
+    echo "This may be due to Google Drive rate limits or file size"
+    exit 1
+fi
 
 echo "Upload complete!"
 

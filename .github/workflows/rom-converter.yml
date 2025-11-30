@@ -1,0 +1,188 @@
+name: ROM Converter
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: 'Direct download URL for base ROM'
+        required: true
+        type: string
+      rom_type:
+        description: 'ROM type (super or hybrid)'
+        required: true
+        type: choice
+        options:
+          - super
+          - hybrid
+      user_id:
+        description: 'Telegram user ID'
+        required: true
+        type: string
+      chat_id:
+        description: 'Telegram chat ID'
+        required: true
+        type: string
+
+jobs:
+  convert-rom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            android-sdk-libsparse-utils \
+            android-sdk-ext4-utils \
+            brotli \
+            unzip \
+            zip \
+            python3-pip \
+            aria2 \
+            wget \
+            curl
+      
+      - name: Install Android tools
+        run: |
+          # Install lpunpack/lpmake tools
+          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpunpack -O /usr/local/bin/lpunpack
+          wget https://github.com/unix3dgforce/lpunpack_and_lpmake/raw/main/lpmake -O /usr/local/bin/lpmake
+          chmod +x /usr/local/bin/lpunpack
+          chmod +x /usr/local/bin/lpmake
+          
+          # Install simg2img/img2simg
+          wget https://github.com/anestisb/android-simg2img/releases/download/1.1.4/simg2img_1.1.4-1_amd64.deb
+          sudo dpkg -i simg2img_1.1.4-1_amd64.deb || true
+          sudo apt-get install -f -y
+      
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+      
+      - name: Configure rclone
+        env:
+          RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONFIG" | base64 -d > ~/.config/rclone/rclone.conf
+      
+      - name: Download ROM
+        id: download
+        run: |
+          echo "Downloading ROM from: ${{ github.event.inputs.rom_url }}"
+          mkdir -p downloads
+          cd downloads
+          
+          # Use aria2c for faster downloads with resume capability
+          aria2c -x 16 -s 16 -k 1M "${{ github.event.inputs.rom_url }}" -o base_rom.zip
+          
+          echo "Download complete!"
+          ls -lh base_rom.zip
+          
+          # Verify download
+          if [ ! -f "base_rom.zip" ]; then
+            echo "Error: Download failed!"
+            exit 1
+          fi
+          
+          echo "rom_path=$(pwd)/base_rom.zip" >> $GITHUB_OUTPUT
+      
+      - name: Extract ROM metadata
+        id: metadata
+        run: |
+          python3 scripts/extract_rom_info.py downloads/base_rom.zip ${{ github.event.inputs.rom_type }} > metadata.json
+          cat metadata.json
+          
+          # Extract filename from JSON
+          FILENAME=$(python3 -c "import json; print(json.load(open('metadata.json'))['filename'])")
+          echo "output_filename=$FILENAME" >> $GITHUB_OUTPUT
+          echo "Output filename will be: $FILENAME"
+      
+      - name: Convert to Super ROM
+        if: github.event.inputs.rom_type == 'super'
+        run: |
+          chmod +x scripts/convert_to_super.sh
+          bash scripts/convert_to_super.sh downloads/base_rom.zip output
+      
+      - name: Convert to Hybrid ROM
+        if: github.event.inputs.rom_type == 'hybrid'
+        run: |
+          chmod +x scripts/convert_to_hybrid.sh
+          bash scripts/convert_to_hybrid.sh downloads/base_rom.zip output
+      
+      - name: Create final package
+        id: package
+        run: |
+          mkdir -p final
+          cd output
+          
+          if [ "${{ github.event.inputs.rom_type }}" == "super" ]; then
+            # Package super ROM
+            zip -r ../final/${{ steps.metadata.outputs.output_filename }} *
+          else
+            # Hybrid ROM is already zipped
+            mv *.zip ../final/${{ steps.metadata.outputs.output_filename }} || true
+            # If not zipped, create zip
+            if [ ! -f "../final/${{ steps.metadata.outputs.output_filename }}" ]; then
+              zip -r ../final/${{ steps.metadata.outputs.output_filename }} *
+            fi
+          fi
+          
+          cd ../final
+          ls -lh
+          
+          # Generate MD5 and SHA256 checksums
+          md5sum ${{ steps.metadata.outputs.output_filename }} > ${{ steps.metadata.outputs.output_filename }}.md5
+          sha256sum ${{ steps.metadata.outputs.output_filename }} > ${{ steps.metadata.outputs.output_filename }}.sha256
+      
+      - name: Upload to Google Drive
+        id: upload
+        env:
+          DRIVE_FOLDER: ${{ secrets.DRIVE_FOLDER_PATH }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE_NAME }}
+        run: |
+          chmod +x scripts/upload_to_drive.sh
+          
+          # Upload and get shareable link
+          DRIVE_LINK=$(bash scripts/upload_to_drive.sh \
+            final/${{ steps.metadata.outputs.output_filename }} \
+            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}")
+          
+          echo "drive_link=$DRIVE_LINK" >> $GITHUB_OUTPUT
+          echo "Download link: $DRIVE_LINK"
+          
+          # Also upload checksums
+          rclone copy final/${{ steps.metadata.outputs.output_filename }}.md5 \
+            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
+          rclone copy final/${{ steps.metadata.outputs.output_filename }}.sha256 \
+            "${RCLONE_REMOTE:-gdrive}:${DRIVE_FOLDER:-ROM_Builds}/"
+      
+      - name: Save output link
+        run: |
+          mkdir -p artifacts
+          echo "${{ steps.upload.outputs.drive_link }}" > artifacts/download_link.txt
+          echo "ROM: ${{ steps.metadata.outputs.output_filename }}" >> artifacts/download_link.txt
+          echo "Type: ${{ github.event.inputs.rom_type }}" >> artifacts/download_link.txt
+          echo "User ID: ${{ github.event.inputs.user_id }}" >> artifacts/download_link.txt
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rom-download-link
+          path: artifacts/download_link.txt
+          retention-days: 7
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf downloads output final
+          echo "Cleanup complete!"

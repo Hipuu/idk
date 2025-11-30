@@ -28,6 +28,24 @@ echo "Working directory: $WORK_DIR"
 echo "Extracting ROM..."
 unzip -q "$ROM_PATH" -d "$EXTRACT_DIR"
 
+# Check if payload.bin exists (OTA format)
+if [ -f "$EXTRACT_DIR/payload.bin" ]; then
+    echo "Detected payload.bin (OTA format) - extracting partitions..."
+    PAYLOAD_OUTPUT="$WORK_DIR/payload_extracted"
+    mkdir -p "$PAYLOAD_OUTPUT"
+    
+    # Extract using payload-dumper-go
+    cd "$EXTRACT_DIR"
+    payload-dumper-go -o "$PAYLOAD_OUTPUT" payload.bin
+    
+    # Move extracted images to EXTRACT_DIR and clean up payload files
+    mv "$PAYLOAD_OUTPUT"/*.img "$EXTRACT_DIR/" 2>/dev/null || true
+    rm -rf "$PAYLOAD_OUTPUT" payload.bin
+    
+    echo "Payload extraction complete!"
+    ls -lh "$EXTRACT_DIR"/*.img 2>/dev/null || echo "Warning: No .img files found after extraction"
+fi
+
 # Create flashable ZIP structure
 echo "Creating flashable ZIP structure..."
 mkdir -p "$ZIP_DIR/META-INF/com/google/android"

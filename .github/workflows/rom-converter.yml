@@ -86,8 +86,29 @@ jobs:
         env:
           RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
         run: |
+          # Check if RCLONE_CONFIG secret is set
+          if [ -z "$RCLONE_CONFIG" ]; then
+            echo "ERROR: RCLONE_CONFIG secret is not set!"
+            echo "Please configure the following GitHub secrets:"
+            echo "  1. RCLONE_CONFIG (base64 encoded rclone.conf)"
+            echo "  2. DRIVE_FOLDER_PATH (e.g., ROM_Builds)"
+            echo "  3. RCLONE_REMOTE_NAME (e.g., gdrive)"
+            echo ""
+            echo "See DEPLOYMENT.md for setup instructions"
+            exit 1
+          fi
+          
+          # Decode and save rclone config
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONFIG" | base64 -d > ~/.config/rclone/rclone.conf
+          
+          # Verify config was created
+          if [ ! -f ~/.config/rclone/rclone.conf ]; then
+            echo "ERROR: Failed to create rclone config file"
+            exit 1
+          fi
+          
+          echo "✓ Rclone configured successfully"
       
       - name: Download ROM
         id: download

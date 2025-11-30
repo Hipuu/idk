@@ -17,16 +17,31 @@ echo "Output directory: $OUTPUT_DIR"
 
 # Create working directories
 WORK_DIR="$(mktemp -d)"
-EXTRACT_DIR="$WORK_DIR/extracted"
+EXTRACT_DIR="$WORK_DIR/rom_extracted" # Changed from 'extracted' to 'rom_extracted'
 SUPER_DIR="$WORK_DIR/super"
 
 mkdir -p "$EXTRACT_DIR" "$SUPER_DIR" "$OUTPUT_DIR"
 
-echo "Working directory: $WORK_DIR"
-
-# Extract ROM
 echo "Extracting ROM..."
 unzip -q "$ROM_PATH" -d "$EXTRACT_DIR"
+
+# Check if payload.bin exists (OTA format)
+if [ -f "$EXTRACT_DIR/payload.bin" ]; then
+    echo "Detected payload.bin (OTA format) - extracting partitions..."
+    PAYLOAD_OUTPUT="$WORK_DIR/payload_extracted"
+    mkdir -p "$PAYLOAD_OUTPUT"
+    
+    # Extract using payload-dumper-go
+    cd "$EXTRACT_DIR"
+    payload-dumper-go -o "$PAYLOAD_OUTPUT" payload.bin
+    
+    # Move extracted images to EXTRACT_DIR and clean up payload files
+    mv "$PAYLOAD_OUTPUT"/*.img "$EXTRACT_DIR/" 2>/dev/null || true
+    rm -rf "$PAYLOAD_OUTPUT" payload.bin
+    
+    echo "Payload extraction complete!"
+    ls -lh "$EXTRACT_DIR"/*.img 2>/dev/null || echo "Warning: No .img files found after extraction"
+fi
 
 # Find super.img or partition images
 if [ -f "$EXTRACT_DIR/super.img" ]; then

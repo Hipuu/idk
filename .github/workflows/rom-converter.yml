@@ -8,12 +8,12 @@ on:
         required: true
         type: string
       rom_type:
-        description: 'ROM type (super or hybrid)'
+        description: 'ROM type (super or recovery)'
         required: true
         type: choice
         options:
           - super
-          - hybrid
+          - recovery
       user_id:
         description: 'Telegram user ID'
         required: true
@@ -113,6 +113,11 @@ jobs:
       - name: Download ROM
         id: download
         run: |
+          # Check initial disk space
+          echo "Initial disk space:"
+          df -h
+          echo ""
+          
           echo "Downloading ROM from: ${{ github.event.inputs.rom_url }}"
           mkdir -p downloads
           cd downloads
@@ -130,6 +135,26 @@ jobs:
           fi
           
           echo "rom_path=$(pwd)/base_rom.zip" >> $GITHUB_OUTPUT
+          
+          # Check disk space after download
+          echo ""
+          echo "Disk space after download:"
+          df -h
+      
+      - name: Free up disk space
+        run: |
+          echo "Cleaning up to free disk space..."
+          
+          # Remove unnecessary system files
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          
+          echo ""
+          echo "Disk space after cleanup:"
+          df -h
       
       - name: Extract ROM metadata
         id: metadata
@@ -145,14 +170,32 @@ jobs:
       - name: Convert to Super ROM
         if: github.event.inputs.rom_type == 'super'
         run: |
+          echo "Starting Super ROM conversion..."
+          df -h
+          
           chmod +x scripts/convert_to_super.sh
           bash scripts/convert_to_super.sh downloads/base_rom.zip output
+          
+          # Clean up immediately after conversion
+          rm -f downloads/base_rom.zip
+          echo ""
+          echo "Disk space after conversion:"
+          df -h
       
-      - name: Convert to Hybrid ROM
-        if: github.event.inputs.rom_type == 'hybrid'
+      - name: Convert to Recovery ROM
+        if: github.event.inputs.rom_type == 'recovery'
         run: |
-          chmod +x scripts/convert_to_hybrid.sh
-          bash scripts/convert_to_hybrid.sh downloads/base_rom.zip output
+          echo "Starting Recovery ROM conversion..."
+          df -h
+          
+          chmod +x scripts/convert_to_recovery.sh
+          bash scripts/convert_to_recovery.sh downloads/base_rom.zip output
+          
+          # Clean up immediately after conversion
+          rm -f downloads/base_rom.zip
+          echo ""
+          echo "Disk space after conversion:"
+          df -h
       
       - name: Create final package
         id: package

@@ -51,21 +51,31 @@ jobs:
             curl \
             e2fsprogs
       
-      - name: Install lpunpack and lpmake
+      - name: Build lpunpack and lpmake from source
         run: |
-          # Download precompiled lpunpack and lpmake binaries from working repo
-          wget https://github.com/Rprop/aosp15_partition_tools/releases/download/v1.0/partition_tools_linux_x86_64.tar.gz -O /tmp/partition_tools.tar.gz
+          # Install build dependencies
+          sudo apt-get install -y build-essential cmake git
           
-          # Extract binaries
-          tar -xzf /tmp/partition_tools.tar.gz -C /tmp/
+          # Clone lpunpack/lpmake source repository
+          cd /tmp
+          git clone https://github.com/unix3dgforce/lpunpack_and_lpmake.git
+          cd lpunpack_and_lpmake
           
-          # Install to /usr/local/bin
-          sudo install -m 755 /tmp/lpunpack /usr/local/bin/lpunpack
-          sudo install -m 755 /tmp/lpmake /usr/local/bin/lpmake
+# Build lpunpack
+          echo "Building lpunpack..."
+          gcc lpunpack.c -o lpunpack -lz
+          
+          # Build lpmake (more complex, needs proper compilation)
+          echo "Building lpmake..."
+          gcc lpmake.cc -o lpmake -lstdc++ -lz -lcrypto
+          
+          # Install binaries
+          sudo install -m 755 lpunpack /usr/local/bin/lpunpack
+          sudo install -m 755 lpmake /usr/local/bin/lpmake
           
           # Verify installation
-          lpunpack --version || echo "lpunpack installed successfully"
-          lpmake --version || echo "lpmake installed successfully"
+          which lpunpack && echo "✓ lpunpack compiled and installed"
+          which lpmake && echo "✓ lpmake compiled and installed"
       
       - name: Install rclone
         run: |

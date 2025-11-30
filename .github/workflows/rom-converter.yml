@@ -56,18 +56,14 @@ jobs:
           # Install build dependencies
           sudo apt-get install -y build-essential cmake git
           
-          # Clone lpunpack/lpmake source repository
+          # Clone lpunpack/lpmake source repository (verified public repo)
           cd /tmp
-          git clone https://github.com/unix3dgforce/lpunpack_and_lpmake.git
+          git clone https://github.com/LonelyFool/lpunpack_and_lpmake.git
           cd lpunpack_and_lpmake
           
-          # Build lpunpack
-          echo "Building lpunpack..."
-          gcc lpunpack.c -o lpunpack -lz
-          
-          # Build lpmake (more complex, needs proper compilation)
-          echo "Building lpmake..."
-          gcc lpmake.cc -o lpmake -lstdc++ -lz -lcrypto
+          # Build using provided script
+          chmod +x make.sh
+          ./make.sh
           
           # Install binaries
           sudo install -m 755 lpunpack /usr/local/bin/lpunpack

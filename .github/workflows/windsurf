@@ -298,7 +298,7 @@ jobs:
         TIMESTAMP=$(date +%Y%m%d_%H%M%S)
         
         # Upload files to Google Drive
-        rclone copy "$OUTPUT_DIR/" "gdrive:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/" \
+        rclone copy "$OUTPUT_DIR/" "bot:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/" \
           --progress \
           --stats-one-line \
           --stats 5s \

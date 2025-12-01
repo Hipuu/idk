@@ -318,7 +318,7 @@ jobs:
             echo "Download link for $FILENAME:"
             rclone link "gdrive:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/$FILENAME"
           fi
-done
+        done
 
     - name: Clean up
       if: always()

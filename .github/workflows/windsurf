@@ -1,0 +1,343 @@
+name: OnePlus ROM to Recovery Converter (Google Drive)
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_codename:
+        description: 'OnePlus device codename (e.g., oneplus9, oneplus9pro, etc.)'
+        required: true
+        default: 'oneplus9'
+      rom_url:
+        description: 'Direct download URL to the base ROM (OxygenOS/ColorOS zip)'
+        required: true
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'userdebug'
+        type: choice
+        options:
+        - userdebug
+        - user
+        - eng
+      clean_build:
+        description: 'Perform clean build (takes longer but more reliable)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  WORKSPACE: ${{ github.workspace }}
+  ROM_DIR: rom_input
+  OUTPUT_DIR: rom_output
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 10G
+
+jobs:
+  convert-rom:
+    name: Convert OnePlus ROM
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up environment
+      run: |
+        echo "Setting up build environment..."
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          openjdk-17-jdk git-core gnupg flex bison gperf build-essential \
+          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache \
+          libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 python3-pip \
+          p7zip-full brotli rsync schedtool aria2 jq bc bsdmainutils \
+          libssl-dev libffi-dev libxml2-dev libxslt1-dev zip unzip lzop \
+          imagemagick libncurses5-dev libssl-dev libwxgtk3.0-gtk3-dev \
+          libxml2-utils lzop pngcrush schedtool squashfs-tools xsltproc \
+          zip zlib1g-dev python3-protobuf python3-pip python3-venv
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install required Python packages
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir \
+          requests tqdm pycryptodomex pycryptodome protobuf==3.20.3 \
+          pycrypto pyyaml backports.lzma mako pillow six future \
+          pyasn1 pyasn1-modules ecdsa mox3
+
+    - name: Create directories
+      run: |
+        mkdir -p "$ROM_DIR" "$OUTPUT_DIR"
+        mkdir -p "$CCACHE_DIR"
+        echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
+
+    - name: Download base ROM
+      id: download_rom
+      run: |
+        echo "Downloading ROM from ${{ github.event.inputs.rom_url }}..."
+        cd "$ROM_DIR"
+        aria2c -x16 -s16 -k1M --file-allocation=falloc \
+          --max-tries=5 --retry-wait=5 \
+          -o rom.zip "${{ github.event.inputs.rom_url }}" || \
+          { echo "Failed to download ROM"; exit 1; }
+        
+        echo "Verifying ROM integrity..."
+        if ! unzip -t rom.zip >/dev/null 2>&1; then
+          echo "Error: Downloaded file is not a valid ZIP archive"
+          exit 1
+        fi
+        
+        echo "Extracting ROM..."
+        unzip -q -o rom.zip -d . || { echo "Failed to extract ROM"; exit 1; }
+        rm -f rom.zip
+        
+        # Check for common OnePlus ROM structures
+        if [ -f payload.bin ]; then
+          echo "Found payload.bin - extracting..."
+          python3 -m pip install pycryptodomex
+          git clone https://github.com/cyxx/extract_android_ota_payload
+          python3 extract_android_ota_payload/extract_android_ota_payload.py payload.bin extracted_rom
+          mv extracted_rom/* .
+          rm -rf extracted_rom
+        fi
+        
+        echo "ROM files:"
+        find . -type f -name "*.img" -o -name "*.bin" | sort
+
+    - name: Clone required tools and device tree
+      run: |
+        echo "Cloning required repositories..."
+        mkdir -p vendor/lineage build device/oneplus/${{ github.event.inputs.device_codename }}
+        
+        # Clone LineageOS vendor
+        if [ ! -d "vendor/lineage" ]; then
+          git clone --depth=1 https://github.com/LineageOS/android_vendor_lineage -b lineage-20.0 vendor/lineage
+        fi
+        
+        # Clone build tools
+        if [ ! -d "build" ]; then
+          git clone --depth=1 https://github.com/LineageOS/android_build -b lineage-20.0 build
+        fi
+        
+        # Clone device tree (try both LineageOS and custom repos)
+        if [ ! -d "device/oneplus/${{ github.event.inputs.device_codename }}" ]; then
+          if ! git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-20.0 device/oneplus/${{ github.event.inputs.device_codename }} 2>/dev/null; then
+            echo "Official device tree not found, trying other sources..."
+            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-19.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
+            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-18.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
+            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-17.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
+            { echo "Failed to find compatible device tree"; exit 1; }
+          fi
+        fi
+
+    - name: Set up build environment
+      run: |
+        echo "Setting up build environment..."
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        export LC_ALL=C
+        export USE_CCACHE=1
+        export CCACHE_EXEC=/usr/bin/ccache
+        ccache -M $CCACHE_MAXSIZE
+        
+        # Initialize build environment
+        lunch lineage_${{ github.event.inputs.device_codename }}-${{ github.event.inputs.build_type }} || \
+          { echo "Failed to set up lunch environment"; exit 1; }
+
+    - name: Extract proprietary blobs
+      run: |
+        echo "Extracting proprietary blobs..."
+        cd "$ROM_DIR"
+        
+        # Find and extract system/vendor images
+        if [ -f "system.img" ]; then
+          echo "Found system.img, mounting..."
+          mkdir -p system_mnt
+          sudo mount -o ro system.img system_mnt || \
+            { echo "Failed to mount system.img"; exit 1; }
+          
+          # Extract blobs using extract-files.sh if available
+          if [ -f "../device/oneplus/${{ github.event.inputs.device_codename }}/extract-files.sh" ]; then
+            cd ..
+            ./device/oneplus/${{ github.event.inputs.device_codename }}/extract-files.sh "$ROM_DIR"
+            cd "$ROM_DIR"
+          fi
+          
+          sudo umount system_mnt
+          rm -rf system_mnt
+        fi
+
+    - name: Create Flashable ZIP
+      run: |
+        echo "Creating flashable ZIP from base ROM..."
+        cd "$ROM_DIR"
+        
+        # Create output directory
+        mkdir -p "$OUTPUT_DIR"
+        
+        # Create META-INF directory structure
+        mkdir -p META-INF/com/google/android/
+        
+        # Create update-binary
+        cat > META-INF/com/google/android/update-binary << 'EOF'
+        #!/sbin/sh
+        
+        # Recovery Update Binary
+        
+        OUTFD=$2
+        ZIP=$3
+        
+        ui_print() { echo -e "ui_print $1\nui_print" > /proc/self/fd/$OUTFD; }
+        
+        ui_print "=================================="
+        ui_print "OnePlus Base ROM Flasher"
+        ui_print "Device: ${{ github.event.inputs.device_codename }}"
+        ui_print "=================================="
+        
+        # Mount partitions
+        ui_print "- Mounting partitions..."
+        for block in system system_ext vendor product odm vendor_dlkm odm_dlkm my_carrier my_company my_engineering my_heytap my_manifest my_preload my_product my_region my_stock my_version; do
+            if [ -e /dev/block/bootdevice/by-name/$block ]; then
+                ui_print "  - Mounting $block"
+                mount -o rw /dev/block/bootdevice/by-name/$block /$block 2>/dev/null || \
+                mount -o rw /dev/block/mapper/$block /$block 2>/dev/null || \
+                mount -o rw /dev/block/platform/*/by-name/$block /$block 2>/dev/null || \
+                ui_print "  - Could not mount $block"
+            fi
+        done
+        
+        # Flash each partition
+        for image in /tmp/flash/*.img; do
+            [ ! -f "$image" ] && continue
+            
+            part=$(basename "$image" .img)
+            ui_print "- Flashing $part..."
+            
+            # Find partition block
+            block=""
+            for blk in /dev/block/bootdevice/by-name/$part \
+                      /dev/block/mapper/$part \
+                      /dev/block/platform/*/by-name/$part; do
+                if [ -e "$blk" ]; then
+                    block=$(readlink -f "$blk")
+                    break
+                fi
+            done
+            
+            if [ -n "$block" ] && [ -b "$block" ]; then
+                dd if="$image" of="$block" bs=1048576
+                ui_print "  - Successfully flashed $part"
+            else
+                ui_print "  - Could not find block for $part"
+            fi
+        done
+        
+        ui_print "- Flashing complete!"
+        ui_print "- Please reboot your device"
+        ui_print "=================================="
+        EOF
+        
+        # Create updater-script
+        cat > META-INF/com/google/android/updater-script << 'EOF'
+        ui_print("OnePlus Base ROM Flasher");
+        ui_print("Device: ${{ github.event.inputs.device_codename }}");
+        
+        package_extract_dir("flash", "/tmp/flash");
+        set_metadata("/tmp/flash/update-binary", "uid", 0, "gid", 0, "dmode", 0755, "fmode", 0755);
+        run_program("/sbin/sh", "/tmp/flash/update-binary", "dummy", "1", "/tmp/flash/update.zip");
+        EOF
+        
+        # Create directory for flashable images
+        mkdir -p flash
+        
+        # Copy all .img files to flash directory
+        find . -type f -name "*.img" -not -name "*super*" -not -name "*sparse*" -exec cp -v {} flash/ \;
+        
+        # Create flashable zip
+        echo "Creating flashable zip..."
+        zip -r9 "$OUTPUT_DIR/OnePlus_${{ github.event.inputs.device_codename }}_BaseROM_$(date +%Y%m%d).zip" META-INF/ flash/
+        
+        # Clean up
+        rm -rf META-INF/ flash/
+        
+        echo "Flashable zip created successfully!"
+        echo "Output files in $OUTPUT_DIR/:"
+        ls -la "$OUTPUT_DIR/"
+
+    - name: Configure Rclone
+      if: success()
+      run: |
+        echo "Setting up Rclone..."
+        mkdir -p ~/.config/rclone
+        # Create Rclone config from secret
+        echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+        
+        # Install Rclone
+        curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip
+        unzip rclone-current-linux-amd64.zip
+        cd rclone-*-linux-amd64
+        sudo cp rclone /usr/bin/
+        sudo chown root:root /usr/bin/rclone
+        sudo chmod 755 /usr/bin/rclone
+        
+        # Verify Rclone installation
+        rclone version
+        
+        # List available remotes (for debugging)
+        rclone listremotes
+
+    - name: Upload to Google Drive
+      if: success()
+      run: |
+        echo "Uploading files to Google Drive..."
+        # Create a timestamp for the folder
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        
+        # Upload files to Google Drive
+        rclone copy "$OUTPUT_DIR/" "gdrive:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/" \
+          --progress \
+          --stats-one-line \
+          --stats 5s \
+          --transfers 4 \
+          --checkers 8 \
+          --drive-chunk-size 64M \
+          --drive-acknowledge-abuse
+        
+        # Create a direct download link
+        echo "Generating download links..."
+        for file in "$OUTPUT_DIR"/*; do
+          if [ -f "$file" ]; then
+            FILENAME=$(basename "$file")
+            echo "Download link for $FILENAME:"
+            rclone link "gdrive:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/$FILENAME"
+          fi
+done
+
+    - name: Clean up
+      if: always()
+      run: |
+        echo "Cleaning up..."
+        # Clean up build artifacts to save space
+        rm -rf "$ROM_DIR" "$OUTPUT_DIR" out/
+        
+        # Clean up ccache
+        ccache -C
+        
+        # Clean up temporary files
+        sudo rm -rf /tmp/*
+        
+        echo "Cleanup complete!"
+
+    - name: Notify completion
+      if: always()
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        SLACK_TITLE: "ROM Conversion ${{ job.status }}"
+        SLACK_MESSAGE: "OnePlus ROM conversion for ${{ github.event.inputs.device_codename }} ${{ job.status }}.\nRun URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\nFiles uploaded to Google Drive: OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/"
+        SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
+        MSG_MINIMAL: true

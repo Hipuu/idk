@@ -66,7 +66,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir \
           requests tqdm pycryptodomex pycryptodome protobuf==3.20.3 \
-          pycrypto pyyaml backports.lzma mako pillow six future \
+          pycrypto pyyaml mako pillow six future \
           pyasn1 pyasn1-modules ecdsa mox3
 
     - name: Create directories
@@ -323,12 +323,4 @@ jobs:
         
         echo "Cleanup complete!"
 
-    - name: Notify completion
-      if: always()
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        SLACK_TITLE: "ROM Conversion ${{ job.status }}"
-        SLACK_MESSAGE: "OnePlus ROM conversion for ${{ github.event.inputs.device_codename }} ${{ job.status }}.\nRun URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\nFiles uploaded to Google Drive: OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/"
-        SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
-        MSG_MINIMAL: true
+    # Slack notification step removed (no SLACK_WEBHOOK configured)

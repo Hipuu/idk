@@ -3,10 +3,11 @@ name: OnePlus ROM to Recovery Converter (Google Drive)
 on:
   workflow_dispatch:
     inputs:
+      # Hardcoded for OnePlus Ace 5 (pkg110)
       device_codename:
-        description: 'OnePlus device codename (e.g., oneplus9, oneplus9pro, etc.)'
+        description: 'Device codename (fixed for OnePlus Ace 5)'
         required: true
-        default: 'oneplus9'
+        default: 'pkg110'
       rom_url:
         description: 'Direct download URL to the base ROM (OxygenOS/ColorOS zip)'
         required: true
@@ -43,18 +44,17 @@ jobs:
 
     - name: Set up environment
       run: |
-        echo "Setting up build environment..."
+        echo "Setting up build environment for OnePlus Ace 5 (pkg110)..."
         sudo apt-get update -qq
         sudo apt-get install -y --no-install-recommends \
           openjdk-17-jdk git-core gnupg flex bison gperf build-essential \
           zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache \
+          x11proto-core-dev libx11-dev zlib1g-dev ccache \
           libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 python3-pip \
           p7zip-full brotli rsync schedtool aria2 jq bc bsdmainutils \
           libssl-dev libffi-dev libxml2-dev libxslt1-dev zip unzip lzop \
-          imagemagick libncurses5-dev libssl-dev libwxgtk3.0-gtk3-dev \
-          libxml2-utils lzop pngcrush schedtool squashfs-tools xsltproc \
-          zip zlib1g-dev python3-protobuf python3-pip python3-venv
+          imagemagick pngcrush squashfs-tools \
+          python3-protobuf python3-venv
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -108,30 +108,18 @@ jobs:
         echo "ROM files:"
         find . -type f -name "*.img" -o -name "*.bin" | sort
 
-    - name: Clone required tools and device tree
+    - name: Clone required tools
       run: |
-        echo "Cloning required repositories..."
-        mkdir -p vendor/lineage build device/oneplus/${{ github.event.inputs.device_codename }}
+        echo "Setting up build environment for OnePlus Ace 5 (pkg110)..."
+        mkdir -p vendor/lineage build
         
-        # Clone LineageOS vendor
+        # Clone minimal required repositories
         if [ ! -d "vendor/lineage" ]; then
           git clone --depth=1 https://github.com/LineageOS/android_vendor_lineage -b lineage-20.0 vendor/lineage
         fi
         
-        # Clone build tools
         if [ ! -d "build" ]; then
           git clone --depth=1 https://github.com/LineageOS/android_build -b lineage-20.0 build
-        fi
-        
-        # Clone device tree (try both LineageOS and custom repos)
-        if [ ! -d "device/oneplus/${{ github.event.inputs.device_codename }}" ]; then
-          if ! git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-20.0 device/oneplus/${{ github.event.inputs.device_codename }} 2>/dev/null; then
-            echo "Official device tree not found, trying other sources..."
-            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-19.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
-            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-18.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
-            git clone --depth=1 https://github.com/LineageOS/android_device_oneplus_${{ github.event.inputs.device_codename }} -b lineage-17.1 device/oneplus/${{ github.event.inputs.device_codename }} || \
-            { echo "Failed to find compatible device tree"; exit 1; }
-          fi
         fi
 
     - name: Set up build environment

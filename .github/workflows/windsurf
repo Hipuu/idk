@@ -273,8 +273,11 @@ jobs:
       run: |
         echo "Setting up Rclone..."
         mkdir -p ~/.config/rclone
-        # Create Rclone config from secret
-        echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+        
+        # Decode base64 Rclone config
+        echo "Decoding Rclone config..."
+        echo "${{ secrets.RCLONE_CONFIG }}" | base64 -d > ~/.config/rclone/rclone.conf
+        chmod 600 ~/.config/rclone/rclone.conf
         
         # Install Rclone
         curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip
@@ -298,7 +301,7 @@ jobs:
         TIMESTAMP=$(date +%Y%m%d_%H%M%S)
         
         # Upload files to Google Drive
-        rclone copy "$OUTPUT_DIR/" "bot:OnePlus_ROMs/${{ github.event.inputs.device_codename }}/$TIMESTAMP/" \
+        rclone copy "$OUTPUT_DIR/" "bot:ROM_Builds/${{ github.event.inputs.device_codename }}/$TIMESTAMP/" \
           --progress \
           --stats-one-line \
           --stats 5s \
